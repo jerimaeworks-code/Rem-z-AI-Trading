@@ -79,9 +79,12 @@ module.exports = async function handler(request, response) {
     sendJson(response, 400, { error: "Request body must be valid JSON" });
     return;
   }
-  if (!payload || typeof payload !== "object" || Array.isArray(payload) ||
-      Buffer.byteLength(JSON.stringify(payload), "utf8") > MAX_BODY_BYTES) {
-    sendJson(response, 413, { error: "Request body is invalid or too large" });
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    sendJson(response, 400, { error: "Request body must be a JSON object" });
+    return;
+  }
+  if (Buffer.byteLength(JSON.stringify(payload), "utf8") > MAX_BODY_BYTES) {
+    sendJson(response, 413, { error: "Request body is too large" });
     return;
   }
   if (typeof payload.market_data !== "string" ||

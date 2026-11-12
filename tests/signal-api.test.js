@@ -145,6 +145,13 @@ test("rejects foreign browser origins before calling Claude", async () => {
   }
 });
 
+test("rejects non-object JSON request bodies", async () => {
+  const response = createResponse();
+  await signalHandler(createRequest({ body: null }), response);
+  assert.equal(response.statusCode, 400);
+  assert.match(response.json().error, /JSON object/);
+});
+
 test("returns a safe HOLD when Claude's output cannot be verified", async () => {
   const originalFetch = global.fetch;
   global.fetch = async () => anthropicResponse("Unexpected output");
