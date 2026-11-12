@@ -369,16 +369,17 @@ function parseSignal(text) {
   return { signal: `${normalizedAction} ${confidence} ${stop} ${target}` };
 }
 
-async function requestClaudeSignal(marketData) {
+async function requestClaudeSignal(marketData, requestApiKey = apiKey,
+                                  requestModel = model) {
   const upstream = await fetch(ANTHROPIC_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": apiKey,
+      "x-api-key": requestApiKey,
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model,
+      model: requestModel,
       max_tokens: 512,
       output_config: { effort: "low" },
       system: SIGNAL_SYSTEM_PROMPT + CHART_PATTERN_GUIDANCE +
@@ -405,6 +406,14 @@ async function requestClaudeSignal(marketData) {
   if (!signalText)
     throw new InvalidSignalError("Claude returned an empty signal");
   return parseSignal(signalText);
+}
+
+async function runSignalAnalysis(marketData, requestApiKey, requestModel = DEFAULT_MODEL) {
+  const result = await requestClaudeSignal(marketData, requestApiKey, requestModel);
+  if (result.signal.startsWith("HOLD "))
+    return requestClaudeSignal(`${marketData}\n\n${FORCED_DIRECTION_RETRY}`,
+                               requestApiKey, requestModel);
+  return result;
 }
 
 async function handleSignal(request, response) {
@@ -661,22 +670,26 @@ const server = http.createServer(async (request, response) => {
   sendJson(response, 404, { error: "Not found" });
 });
 
-server.on("error", (error) => {
-  console.error(`Could not start the local bridge: ${error.message}`);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  server.on("error", (error) => {
+    console.error(`Could not start the local bridge: ${error.message}`);
+    process.exitCode = 1;
+  });
 
-server.listen(PORT, HOST, () => {
-  console.log(`Claude MT5 dashboard: http://${HOST}:${PORT}`);
-  console.log("Local-only bridge started. Press Ctrl+C to stop it.");
-  if (apiKey) console.log("An API key was loaded from the ANTHROPIC_API_KEY environment variable.");
-});
+  server.listen(PORT, HOST, () => {
+    console.log(`Claude MT5 dashboard: http://${HOST}:${PORT}`);
+    console.log("Local-only bridge started. Press Ctrl+C to stop it.");
+    if (apiKey) console.log("An API key was loaded from the ANTHROPIC_API_KEY environment variable.");
+  });
 
-function clearApiKeyAndStop() {
-  apiKey = "";
-  server.close(() => process.exit(0));
-  setTimeout(() => process.exit(0), 1000).unref();
+  function clearApiKeyAndStop() {
+    apiKey = "";
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 1000).unref();
+  }
+
+  process.on("SIGINT", clearApiKeyAndStop);
+  process.on("SIGTERM", clearApiKeyAndStop);
 }
 
-process.on("SIGINT", clearApiKeyAndStop);
-process.on("SIGTERM", clearApiKeyAndStop);
+module.exports = { runSignalAnalysis, InvalidSignalError, MAX_MARKET_DATA_CHARS };

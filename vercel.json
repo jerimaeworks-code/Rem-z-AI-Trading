@@ -1,5 +1,14 @@
 {
+  "functions": {
+    "api/*.js": {
+      "maxDuration": 60
+    }
+  },
   "rewrites": [
+    {
+      "source": "/dashboard",
+      "destination": "/website/dashboard.html"
+    },
     {
       "source": "/",
       "destination": "/website/index.html"

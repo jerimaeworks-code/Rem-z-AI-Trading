@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Connect your own MT5 Expert Advisor to the Rem'z AI Trading hosted Claude signal service.">
+  <meta name="theme-color" content="#0b1020">
+  <title>Bridge Dashboard · Rem'z AI Trading</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0b1020;
+      color: #eef2ff;
+      --muted: #a7b0ca;
+      --line: rgba(190, 204, 255, .16);
+      --accent: #9af0d0;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; background: radial-gradient(ellipse at 75% 0, rgba(89,84,196,.2), transparent 42%), #0b1020; }
+    a { color: inherit; }
+    .wrap { width: min(940px, calc(100% - 36px)); margin: auto; }
+    header { height: 76px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
+    .brand { display: flex; align-items: center; gap: 11px; font-weight: 800; text-decoration: none; }
+    .mark { width: 35px; height: 35px; display: grid; place-items: center; border-radius: 12px; color: #091a18; background: linear-gradient(135deg, var(--accent), #65b5e8); }
+    nav { display: flex; gap: 20px; color: var(--muted); font-size: 14px; }
+    nav a { text-decoration: none; }
+    main { padding: 66px 0 80px; }
+    .eyebrow { color: var(--accent); text-transform: uppercase; letter-spacing: .16em; font-size: 12px; font-weight: 800; }
+    h1 { margin: 12px 0; font-size: clamp(38px, 7vw, 64px); line-height: 1.05; letter-spacing: -.05em; }
+    h2 { margin: 0 0 9px; font-size: 21px; }
+    p { color: var(--muted); line-height: 1.7; }
+    .lead { max-width: 690px; font-size: 17px; }
+    .status, .card, .warning { border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.035); }
+    .status { display: flex; align-items: center; gap: 12px; width: fit-content; margin: 25px 0 42px; padding: 13px 16px; color: var(--muted); font-size: 14px; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: #f3bd64; }
+    .dot.ready { background: var(--accent); box-shadow: 0 0 12px rgba(154,240,208,.75); }
+    .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }
+    .card { padding: 22px; }
+    .num { color: var(--accent); font-size: 12px; font-weight: 800; letter-spacing: .12em; }
+    .card h2 { margin-top: 12px; }
+    .card p { margin-bottom: 0; font-size: 14px; }
+    code { overflow-wrap: anywhere; padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; background: rgba(0,0,0,.24); color: #d7ddff; }
+    .actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 26px 0 42px; }
+    .button { display: inline-flex; min-height: 46px; align-items: center; justify-content: center; padding: 0 18px; border-radius: 11px; background: linear-gradient(110deg, #9af0d0, #9ce8f1); color: #081915; font-weight: 800; text-decoration: none; }
+    .button.secondary { border: 1px solid var(--line); background: rgba(255,255,255,.04); color: #eef2ff; }
+    .warning { margin-top: 17px; padding: 18px 20px; color: var(--muted); font-size: 14px; line-height: 1.7; }
+    .warning strong { color: #eef2ff; }
+    footer { padding: 22px 0; border-top: 1px solid var(--line); color: #8d98b6; font-size: 12px; }
+    @media (max-width: 640px) {
+      header { height: auto; min-height: 72px; flex-wrap: wrap; gap: 12px; padding: 14px 0; }
+      nav { gap: 14px; }
+      main { padding-top: 48px; }
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <a class="brand" href="/" aria-label="Rem'z AI Trading home"><span class="mark">R</span><span>Rem'z AI Trading</span></a>
+      <nav aria-label="Main navigation"><a href="/">Home</a><a href="/downloads/Remz-AI-Trading-Powered-by-Claude.zip">Download EA</a></nav>
+    </header>
+    <main>
+      <div class="eyebrow">Hosted Claude signal service</div>
+      <h1>Bridge Dashboard</h1>
+      <p class="lead">Connect your own MT5 terminal to the hosted signal API. No website account is required. Add your own Anthropic API key in the EA settings; it is sent over HTTPS for each analysis and is not stored by this service.</p>
+      <div class="status" role="status" aria-live="polite"><span id="health-dot" class="dot"></span><span id="health-text">Checking hosted signal service…</span></div>
+      <div class="actions">
+        <a class="button" href="/downloads/Remz-AI-Trading-Powered-by-Claude.zip">Download MT5 EA</a>
+        <a class="button secondary" href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">Get an Anthropic API key</a>
+      </div>
+      <div class="grid">
+        <article class="card">
+          <div class="num">01 / MT5 SETUP</div>
+          <h2>Allow the hosted URL</h2>
+          <p>In MT5, open <strong>Tools → Options → Expert Advisors</strong>, enable WebRequest, and add <code>https://remzaitrading.vercel.app</code> to the allowed URLs.</p>
+        </article>
+        <article class="card">
+          <div class="num">02 / EA INPUTS</div>
+          <h2>Use your own API key</h2>
+          <p>Attach the EA to an M5 chart. In its Inputs, keep hosted service enabled, paste your Anthropic API key into <strong>InpAnthropicApiKey</strong>, and set your own lot size. Do not share or publish your key.</p>
+        </article>
+        <article class="card">
+          <div class="num">03 / YOUR ACCOUNT</div>
+          <h2>Sign in only in MT5</h2>
+          <p>Log in to your broker account in your own MT5 terminal. This website never asks for or receives your broker password, account login, or trading credentials. Orders execute locally in your MT5.</p>
+        </article>
+        <article class="card">
+          <div class="num">04 / USAGE</div>
+          <h2>Anthropic bills your key</h2>
+          <p>Claude usage is charged by Anthropic to the owner of the API key. The public dashboard does not save per-user settings or display individual account, signal, or trade status.</p>
+        </article>
+      </div>
+      <div class="warning"><strong>Important:</strong> The hosted API relays market-analysis prompts to Anthropic. It does not execute trades, receive broker credentials, or store API keys or per-user trading status. Keep your key private, use MT5 demo mode first, and verify all orders and SL/TP levels yourself. Signals are experimental and do not guarantee profit.</div>
+    </main>
+    <footer>Rem'z AI Trading Powered by Claude · Public website and hosted signal API · Trading involves substantial risk.</footer>
+  </div>
+  <script>
+    (async () => {
+      const label = document.getElementById("health-text");
+      const dot = document.getElementById("health-dot");
+      try {
+        const response = await fetch("/api/health", { cache: "no-store" });
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        const status = await response.json();
+        if (status.status !== "ready") throw new Error("Service not ready");
+        label.textContent = "Hosted signal API is online";
+        dot.classList.add("ready");
+      } catch {
+        label.textContent = "Hosted signal API status is unavailable";
+      }
+    })();
+  </script>
+</body>
+</html>

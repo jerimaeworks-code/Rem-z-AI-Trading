@@ -1,9 +1,13 @@
 #property strict
-#property version   "1.20"
+#property version   "1.21"
 #property description "Claude-directed M5 entries with broker-side structural SL/TP"
 
 #include <Trade/Trade.mqh>
 
+input bool   InpUseHostedService = true;
+input string InpAnthropicApiKey = "";
+input string InpClaudeModel = "claude-sonnet-5-5";
+input double InpLotSize = 0.01;
 input bool   InpEnableTrading = true;
 input bool   InpEnforcePerTradeRiskCap = false;
 input bool   InpEnforceDailyDrawdown = false;
@@ -19,6 +23,7 @@ input int    InpMaxDeviationPoints = 20;
 input ulong  InpMagicNumber = 35023301;
 
 const string LOCAL_SIGNAL_URL = "http://127.0.0.1:8765/api/signal";
+const string HOSTED_SIGNAL_URL = "https://remzaitrading.vercel.app/api/signal";
 const int MAX_OPEN_POSITIONS_PER_ACCOUNT = 1;
 CTrade trade;
 int emaFastHandle = INVALID_HANDLE;
@@ -40,6 +45,42 @@ double configuredLotSize = 0.01;
 
 int OnInit()
 {
+   if(InpLotSize < 0.01 || InpLotSize > 100.0)
+   {
+      Print("Lot size must be between 0.01 and 100.00 lots.");
+      return INIT_PARAMETERS_INCORRECT;
+   }
+   string modelName = InpClaudeModel;
+   StringTrimLeft(modelName);
+   StringTrimRight(modelName);
+   if(modelName == "" || StringLen(modelName) > 100)
+   {
+      Print("Claude model must contain 1-100 valid ASCII letters, numbers, periods, underscores or hyphens.");
+      return INIT_PARAMETERS_INCORRECT;
+   }
+   for(int modelIndex = 0; modelIndex < StringLen(modelName); modelIndex++)
+   {
+      ushort character = StringGetCharacter(modelName, modelIndex);
+      if(!((character >= 48 && character <= 57) ||
+           (character >= 65 && character <= 90) ||
+           (character >= 97 && character <= 122) ||
+           character == 46 || character == 95 || character == 45))
+      {
+         Print("Claude model must contain 1-100 valid ASCII letters, numbers, periods, underscores or hyphens.");
+         return INIT_PARAMETERS_INCORRECT;
+      }
+   }
+   string anthropicKey = InpAnthropicApiKey;
+   StringTrimLeft(anthropicKey);
+   StringTrimRight(anthropicKey);
+   if(StringLen(anthropicKey) > 512 ||
+      StringFind(anthropicKey, "\r") >= 0 ||
+      StringFind(anthropicKey, "\n") >= 0)
+   {
+      Print("Anthropic API key is invalid; use a key up to 512 characters with no line breaks.");
+      return INIT_PARAMETERS_INCORRECT;
+   }
+   configuredLotSize = InpLotSize;
    if(_Period != PERIOD_M5)
    {
       Print("Attach this EA to an M5 chart.");
@@ -85,8 +126,12 @@ int OnInit()
    lastBarTime = iTime(_Symbol, PERIOD_M5, 0);
    lastAnalyzedBarTime = lastBarTime;
    RefreshDailyBaseline();
-   PrintFormat("Claude AI Scalper v1.20 initialized on M5. Claude predicts once per new M5 candle only when the account has no open positions; maximum spread is %d points and the account-wide open-position limit is one. Positions use broker-side structural SL and TP from Claude's signal; no fixed account-currency close is applied.",
+   PrintFormat("Claude AI Scalper v1.21 initialized on M5. Claude predicts once per new M5 candle only when the account has no open positions; maximum spread is %d points and the account-wide open-position limit is one. Positions use broker-side structural SL and TP from Claude's signal; no fixed account-currency close is applied.",
                InpMaxSpreadPoints);
+   if(InpUseHostedService)
+      Print("Hosted HTTPS signal service enabled. Add https://remzaitrading.vercel.app to MT5 WebRequest settings; enter your own Anthropic API key in EA inputs.");
+   else
+      Print("Local bridge enabled. Add http://127.0.0.1:8765 to MT5 WebRequest settings and keep the local bridge running.");
    Print(InpEnforcePerTradeRiskCap
          ? "Per-trade risk cap is enabled."
          : "Per-trade risk cap is disabled; broker-valid volume is allowed only if required margin is available. SL/TP controls remain active.");
@@ -96,7 +141,7 @@ int OnInit()
    else
       Print("Daily equity drawdown stop is disabled by EA input; trading may continue after daily losses.");
    Print("Claude decides the entry before order submission. Each flat-account M5 signal request may consume API credits even when no order is executed.");
-   Print("Live trading can lose real funds. No win rate is guaranteed. Add http://127.0.0.1:8765 to MT5 WebRequest settings and keep the local bridge running.");
+   Print("Live trading can lose real funds. No win rate is guaranteed.");
    return INIT_SUCCEEDED;
 }
 
@@ -191,7 +236,7 @@ void ProcessEA()
    if(now - lastHeartbeatAttemptTime >= 30)
    {
       lastHeartbeatAttemptTime = now;
-      if(!ReportBridgeHeartbeat())
+      if(!InpUseHostedService && !ReportBridgeHeartbeat())
          return;
    }
    if(lastAnalyzedBarTime == barTime)
@@ -240,7 +285,7 @@ void ProcessEA()
 
    string signalText;
    string requestFailureReason;
-   if(!RequestLocalSignal(prompt, signalText, requestFailureReason))
+   if(!RequestSignal(prompt, signalText, requestFailureReason))
    {
       ReportExecutionStatus("Claude signal request failed: " + requestFailureReason);
       return;
@@ -307,7 +352,7 @@ bool ReportBridgeHeartbeat()
 {
    string body = "{\"symbol\":\"" + EscapeJson(_Symbol) +
                  "\",\"timeframe\":\"" + EnumToString(_Period) +
-                 "\",\"ea_version\":\"1.20" +
+                 "\",\"ea_version\":\"1.21" +
                  "\",\"trading_enabled\":" + (InpEnableTrading ? "true" : "false") + "}";
    char request[];
    int requestLength = StringToCharArray(body, request, 0, WHOLE_ARRAY, CP_UTF8);
@@ -345,6 +390,11 @@ bool ReportBridgeHeartbeat()
 
 void ReportExecutionStatus(const string statusText)
 {
+   if(InpUseHostedService)
+   {
+      Print(statusText);
+      return;
+   }
    string body = "{\"status\":\"" + EscapeJson(statusText) + "\"}";
    char request[];
    int requestLength = StringToCharArray(body, request, 0, WHOLE_ARRAY, CP_UTF8);
@@ -1174,9 +1224,13 @@ bool BuildMarketPrompt(string &prompt)
    return true;
 }
 
-bool RequestLocalSignal(const string prompt, string &signalText, string &failureReason)
+bool RequestSignal(const string prompt, string &signalText, string &failureReason)
 {
-   string body = "{\"market_data\":\"" + EscapeJson(prompt) + "\"}";
+   string modelName = InpClaudeModel;
+   StringTrimLeft(modelName);
+   StringTrimRight(modelName);
+   string body = "{\"market_data\":\"" + EscapeJson(prompt) +
+                 "\",\"model\":\"" + EscapeJson(modelName) + "\"}";
    char request[];
    int requestLength = StringToCharArray(body, request, 0, WHOLE_ARRAY, CP_UTF8);
    if(requestLength <= 1)
@@ -1188,14 +1242,29 @@ bool RequestLocalSignal(const string prompt, string &signalText, string &failure
    ArrayResize(request, requestLength - 1);
 
    string headers = "Content-Type: application/json\r\n";
+   string url = LOCAL_SIGNAL_URL;
+   if(InpUseHostedService)
+   {
+      string anthropicKey = InpAnthropicApiKey;
+      StringTrimLeft(anthropicKey);
+      StringTrimRight(anthropicKey);
+      if(anthropicKey == "")
+      {
+         failureReason = "enter your Anthropic API key in the EA inputs.";
+         Print("Hosted Claude signal request blocked: " + failureReason);
+         return false;
+      }
+      headers += "x-anthropic-api-key: " + anthropicKey + "\r\n";
+      url = HOSTED_SIGNAL_URL;
+   }
    char response[];
    string responseHeaders;
    ResetLastError();
-   int status = WebRequest("POST", LOCAL_SIGNAL_URL, headers,
+   int status = WebRequest("POST", url, headers,
                            InpRequestTimeoutMs, request, response, responseHeaders);
    if(status == -1)
    {
-      failureReason = StringFormat("WebRequest error %d; check the bridge and MT5 allowed-URL list.",
+      failureReason = StringFormat("WebRequest error %d; check the signal service and MT5 allowed-URL list.",
                                    GetLastError());
       Print("Claude signal WebRequest failed. " + failureReason);
       return false;
@@ -1205,9 +1274,9 @@ bool RequestLocalSignal(const string prompt, string &signalText, string &failure
       string responseText = CharArrayToString(response, 0, -1, CP_UTF8);
       string apiError;
       if(ExtractJsonString(responseText, "\"error\"", apiError))
-         failureReason = StringFormat("bridge HTTP %d: %s", status, StringSubstr(apiError, 0, 180));
+         failureReason = StringFormat("signal service HTTP %d: %s", status, StringSubstr(apiError, 0, 180));
       else
-         failureReason = StringFormat("bridge HTTP %d; no order will be sent.", status);
+         failureReason = StringFormat("signal service HTTP %d; no order will be sent.", status);
       Print("Claude signal request failed: " + failureReason);
       return false;
    }

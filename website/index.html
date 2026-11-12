@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Rem'z AI Trading Powered by Claude — a downloadable MT5 Expert Advisor and private local bridge that each trader runs on their own computer.">
+  <meta name="description" content="Rem'z AI Trading Powered by Claude — a hosted Claude signal service and downloadable MT5 Expert Advisor that trades in your own MT5 terminal.">
   <meta name="theme-color" content="#0b1020">
   <title>Rem'z AI Trading Powered by Claude</title>
   <style>
@@ -107,7 +107,7 @@
       <nav aria-label="Main navigation">
         <a href="#how">How it works</a>
         <a href="#download">Download EA</a>
-        <a class="button secondary" href="http://127.0.0.1:8765/dashboard">Open bridge</a>
+        <a class="button secondary" href="/dashboard">Open bridge</a>
         <a class="button secondary" href="#safety">Risk &amp; safety</a>
       </nav>
     </header>
@@ -117,12 +117,12 @@
         <div>
           <div class="eyebrow">MetaTrader 5 · M5 · Your own setup</div>
           <h1>Rem'z AI Trading<br><span>Powered by Claude</span></h1>
-          <p class="lead">Explore Rem'z AI Trading, download the MT5 Expert Advisor, and run your own private Claude bridge locally. Each trader connects their own MT5 account and configures their own Anthropic API key.</p>
+          <p class="lead">Explore Rem'z AI Trading and connect your own MT5 terminal to the hosted Claude signal service. Each trader supplies their own Anthropic API key and executes trades in their own MT5 account.</p>
           <div class="actions">
             <a class="button" href="/downloads/Remz-AI-Trading-Powered-by-Claude.zip" download>Download the MT5 Expert Advisor <span aria-hidden="true">↓</span></a>
-            <a class="button secondary" href="http://127.0.0.1:8765/dashboard">Open local bridge dashboard</a>
+            <a class="button secondary" href="/dashboard">Open hosted bridge dashboard</a>
           </div>
-          <p class="micro">The dashboard button works when your local bridge is running.</p>
+          <p class="micro">No website account required · Your own API key · Orders execute locally in your MT5 terminal</p>
         </div>
         <div class="terminal" aria-label="Illustration of an M5 candlestick chart">
           <div class="terminal-top"><span>GOLD · M5 · Market view</span><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span></div>
@@ -137,12 +137,12 @@
 
       <section id="how">
         <div class="eyebrow">Getting started</div>
-        <h2>Your terminal. Your bridge. Your API key.</h2>
-        <p class="section-lead">This website is publicly hosted. The bridge runs privately on each trader's own computer and uses that trader's API key. The EA places trades only through the user's own MT5 terminal; broker login details are not sent to this website.</p>
+        <h2>Your terminal. Your API key. Your account.</h2>
+        <p class="section-lead">The hosted service relays requests to Claude using the API key supplied in each trader's EA inputs. Broker login details never leave the user's MT5 terminal; trade execution remains local.</p>
         <div class="cards">
           <article class="card"><div class="num">01 / DOWNLOAD</div><h3>Get the MT5 Expert Advisor</h3><p>Download the EA source and compiled Expert Advisor, then install them in your MT5 Experts folder.</p></article>
           <article class="card"><div class="num">02 / CONNECT</div><h3>Use your own MT5 account</h3><p>Sign in to your broker in your own MT5 terminal and attach the EA to an M5 chart. The bridge never receives your broker password.</p></article>
-          <article class="card"><div class="num">03 / CONFIGURE</div><h3>Configure your local bridge</h3><p>Start the bridge on your computer, open its local dashboard, and enter your own Anthropic API key.</p></article>
+          <article class="card"><div class="num">03 / CONFIGURE</div><h3>Configure the hosted service</h3><p>Allow the hosted URL in MT5 WebRequest settings and enter your own Anthropic API key in the EA inputs.</p></article>
         </div>
       </section>
 
@@ -151,7 +151,7 @@
           <div>
             <div class="eyebrow">Windows download</div>
             <h2>Rem'z AI Trading Powered by Claude</h2>
-            <p>Download the MT5 Expert Advisor source and compiled file. The website and EA download are public; the trading bridge and API key remain on each trader's own computer.</p>
+            <p>Download the MT5 Expert Advisor source and compiled file. Each EA sends its own Anthropic API key over HTTPS for analysis; this site does not save per-user API keys or trading status.</p>
           </div>
           <a class="button" href="/downloads/Remz-AI-Trading-Powered-by-Claude.zip" download>Download EA ZIP</a>
         </div>
@@ -161,7 +161,8 @@
         <div class="eyebrow">Please read before trading</div>
         <h2>AI signals involve real risk.</h2>
         <p class="section-lead">This software is an experimental tool, not financial advice. AI predictions can be wrong, trades can lose money, API use may incur charges, and broker execution is not guaranteed. Test carefully on a demo account before considering live use.</p>
-        <div class="notice"><strong>Private local bridge:</strong> The public website does not host a trading bridge or store API keys. Each trader must run their own bridge locally and configure their own key. The bridge is not a multi-user hosted service; never expose it directly to the internet.</div>
+        <div class="notice"><strong>Hosted signal service:</strong> Each EA sends the user's Anthropic API key with its HTTPS analysis request. The application does not persist API keys or trading data. Anthropic processes the request, and usage is billed to the key owner. Never share your API key.</div>
+        <div class="notice"><strong>Local trade execution:</strong> The cloud service returns a signal only. The EA checks positions, validates broker limits, and submits any order inside the user's own MT5 terminal; no broker password or account login is sent to this website.</div>
         <div class="notice"><strong>Exit mapping:</strong> This EA build intentionally maps Claude's SL distance to the MT5 take-profit and Claude's TP distance to the MT5 stop-loss, as requested. This reverses normal exit placement and can create poor risk/reward; verify the mapped levels in MT5 and test on demo first.</div>
         <div class="notice"><strong>Independent product:</strong> Rem'z AI Trading is not affiliated with, endorsed by, or sponsored by Anthropic, MetaQuotes, MetaTrader, or any broker. “Claude” and “MetaTrader 5” are referenced to identify compatible services and software.</div>
       </section>

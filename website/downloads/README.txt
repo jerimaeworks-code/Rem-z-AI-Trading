@@ -8,27 +8,40 @@ FILES
 REQUIREMENTS
 - Windows computer
 - MetaTrader 5 and a broker account
-- A running compatible Rem'z AI Trading bridge
 - Your own Anthropic API key and API billing account
+- Internet access to https://remzaitrading.vercel.app
 
-INSTALLATION
+HOSTED SERVICE INSTALLATION
 1. In MT5, choose File > Open Data Folder.
 2. Copy ClaudeAI_Scalper.ex5 and ClaudeAI_Scalper.mq5 into:
    MQL5\Experts\ClaudeAI_Scalper\
    Create the ClaudeAI_Scalper folder if needed.
-3. This EA build requests its signal from http://127.0.0.1:8765. A compatible
-   bridge must be running on the SAME computer as MT5.
-4. In MT5, open Tools > Options > Expert Advisors and allow WebRequest for:
-   http://127.0.0.1:8765
-5. In Navigator, right-click Expert Advisors > Refresh. Attach the EA to an
-   M5 chart and enable Algo Trading. Check the MT5 Experts and Journal tabs.
+3. In MT5, open Tools > Options > Expert Advisors, enable WebRequest for
+   listed URL, and add:
+   https://remzaitrading.vercel.app
+4. In Navigator, right-click Expert Advisors > Refresh. Attach the EA to an
+   M5 chart.
+5. In EA Inputs, keep InpUseHostedService enabled, enter your own Anthropic
+   key in InpAnthropicApiKey, and choose your InpLotSize.
+6. Sign in to your broker account only in your own MT5 terminal. Enable Algo
+   Trading only after reviewing all EA inputs.
+7. Check the MT5 Experts and Journal tabs for service or broker errors.
 
 PRIVACY AND SECURITY
-- The temporary bridge website is local-only and is not yet hosted for other
-  users. A remotely hosted bridge will require an updated EA endpoint and
-  per-user authentication and key isolation before public release.
-- Never expose a local bridge to the public internet.
-- Never share your API key, broker password, or account credentials.
+- No website account is required. The EA sends your Anthropic API key in an
+  HTTPS request header for each signal request. The application does not
+  persist API keys, market requests, or per-user trading status.
+- Anthropic processes the analysis and bills the API-key owner.
+- The hosted service returns signals only. The EA checks positions and places
+  orders inside your own MT5 terminal.
+- This website never asks for or receives your broker password or account
+  credentials. Never share your Anthropic API key or publish it in source code.
+
+OPTIONAL LOCAL BRIDGE
+Set InpUseHostedService to false to use localhost_bridge.js instead. Run
+Start_Local_Dashboard.bat and add http://127.0.0.1:8765 to MT5's WebRequest
+allow list. The local bridge has separate local settings and is not needed for
+the hosted service.
 
 TRADING RISK
 This is experimental software, not financial advice and not a promise of
@@ -36,12 +49,12 @@ profit. AI signals can be wrong, orders can fail, and losses can exceed
 expectations due to slippage, gaps, spread, commissions, or platform/broker
 conditions. Each trade is submitted with Claude-derived broker-side SL/TP;
 at the user's request, the EA maps Claude's SL distance to MT5 TP and Claude's
-TP distance to MT5 SL, with no 100-point deduction. This intentionally reverses
-the normal exit mapping and can create poor risk/reward. Check that the mapped
-levels were accepted and appear on the open MT5 position.
-There is no fixed $2/account-currency floating P/L auto-close. A broker-side
-SL can still slip or be affected by gaps. Test on a demo account first. Use
-live trading only if you understand and accept the risks.
+TP distance to MT5 SL. This intentionally reverses normal exit mapping and can
+create poor risk/reward. Check that mapped levels were accepted and appear on
+the open MT5 position.
+There is no fixed $2/account-currency floating P/L auto-close. Broker-side SL
+can still slip or be affected by gaps. Test on a demo account first. Use live
+trading only if you understand and accept the risks.
 
 Anthropic, Claude, MetaQuotes, MetaTrader 5, and broker names are trademarks
 of their respective owners. This independent project is not endorsed by them.
