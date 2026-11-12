@@ -22,8 +22,10 @@ duration to allow the optional one-time HOLD retry. Deploy the `main` branch.
 Connect an Upstash Redis database to the Vercel project and set these production
 environment variables in **Vercel → Project Settings → Environment Variables**:
 
-- `UPSTASH_REDIS_REST_URL` — the database's HTTPS REST URL.
-- `UPSTASH_REDIS_REST_TOKEN` — its REST token.
+- `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` — the database's
+  HTTPS REST URL and token. The Upstash Vercel integration's generated
+  `UPSTASH_REDIS_REST_KV_REST_API_URL` and
+  `UPSTASH_REDIS_REST_KV_REST_API_TOKEN` names are also supported.
 - `CONFIG_ENCRYPTION_KEY` — a private, persistent 32-byte key encoded as 64
   hexadecimal characters. Generate one locally with
   `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`.

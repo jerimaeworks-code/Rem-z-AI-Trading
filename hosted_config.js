@@ -15,8 +15,14 @@ function getEncryptionKey() {
 }
 
 function getRedisSettings() {
-  const url = (process.env.UPSTASH_REDIS_REST_URL || "").replace(/\/+$/, "");
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN || "";
+  const url = (
+    process.env.UPSTASH_REDIS_REST_URL ||
+    process.env.UPSTASH_REDIS_REST_KV_REST_API_URL ||
+    ""
+  ).replace(/\/+$/, "");
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN ||
+    process.env.UPSTASH_REDIS_REST_KV_REST_API_TOKEN ||
+    "";
   if (!/^https:\/\//i.test(url) || !token)
     throw new Error("Hosted settings storage is not configured");
   return { url, token };
