@@ -5,6 +5,7 @@ const { test } = require("node:test");
 const configHandler = require("../api/config.js");
 const healthHandler = require("../api/health.js");
 const signalHandler = require("../api/signal.js");
+const statusHandler = require("../api/status.js");
 
 const API_KEY = "sk-ant-test-key-123456789";
 const OTHER_API_KEY = "sk-ant-another-key-987654321";
@@ -14,8 +15,10 @@ const FIRST_IP = "198.51.100.20";
 const SECOND_IP = "203.0.113.80";
 const THIRD_IP = "192.0.2.45";
 const FOURTH_IP = "192.0.2.80";
+const FIFTH_IP = "203.0.113.91";
 const ORIGIN = "https://remzaitrading.vercel.app";
 const database = new Map();
+const hashes = new Map();
 const limits = new Map();
 let anthropicCalls = [];
 let anthropicHandler = () => ({
@@ -41,6 +44,10 @@ function mockRedis(command) {
     return redisResult("PONG");
   if (command[0] === "GET")
     return redisResult(database.get(command[1]) ?? null);
+  if (command[0] === "HGETALL") {
+    const hash = hashes.get(command[1]);
+    return redisResult(hash ? [...hash.entries()].flat() : []);
+  }
   if (command[0] !== "EVAL")
     throw new Error(`Unexpected Redis command: ${command[0]}`);
 
@@ -67,16 +74,19 @@ function mockRedis(command) {
     return redisResult(1);
   }
   if (script.includes("remz_delete_v1")) {
-    const [ipKey] = keys;
+    const [ipKey, statusKey] = keys;
     const [claimPrefix, configPrefix, ipHash] = args;
     const apiKeyHash = database.get(ipKey);
-    if (!apiKeyHash)
+    if (!apiKeyHash) {
+      hashes.delete(statusKey);
       return redisResult(0);
+    }
     if (database.get(claimPrefix + apiKeyHash) !== ipHash)
       return redisResult(-1);
     database.delete(claimPrefix + apiKeyHash);
     database.delete(configPrefix + apiKeyHash);
     database.delete(ipKey);
+    hashes.delete(statusKey);
     return redisResult(1);
   }
   if (script.includes("remz_limit_v1")) {
@@ -84,6 +94,38 @@ function mockRedis(command) {
     const count = (limits.get(key) || 0) + 1;
     limits.set(key, count);
     return redisResult(count);
+  }
+  if (script.includes("remz_status_signal_v1")) {
+    const [key] = keys;
+    const [lastRequestAt, lastSignal, lastError] = args;
+    const hash = hashes.get(key) || new Map();
+    hash.set("request_count", String(Number(hash.get("request_count") || 0) + 1));
+    hash.set("last_request_at", lastRequestAt);
+    hash.set("last_signal", lastSignal);
+    hash.set("last_error", lastError);
+    hashes.set(key, hash);
+    return redisResult(1);
+  }
+  if (script.includes("remz_status_heartbeat_v1")) {
+    const [key] = keys;
+    const [lastSeenAt, symbol, timeframe, version, tradingEnabled] = args;
+    const hash = hashes.get(key) || new Map();
+    hash.set("ea_last_seen_at", lastSeenAt);
+    hash.set("ea_symbol", symbol);
+    hash.set("ea_timeframe", timeframe);
+    hash.set("ea_version", version);
+    hash.set("ea_trading_enabled", tradingEnabled);
+    hashes.set(key, hash);
+    return redisResult(1);
+  }
+  if (script.includes("remz_status_execution_v1")) {
+    const [key] = keys;
+    const [executionStatus, executionAt] = args;
+    const hash = hashes.get(key) || new Map();
+    hash.set("last_execution_status", executionStatus);
+    hash.set("last_execution_at", executionAt);
+    hashes.set(key, hash);
+    return redisResult(1);
   }
   throw new Error("Unexpected Redis script");
 }
@@ -231,6 +273,66 @@ test("the EA receives signal and lot settings only from its configured public IP
   assert.equal(response.body.includes(API_KEY), false);
 });
 
+test("the hosted status panel reports same-IP EA and execution telemetry without secrets", async () => {
+  await configure(FIFTH_IP, OTHER_API_KEY, 0.1);
+  const heartbeat = createResponse();
+  await statusHandler(createRequest("POST", FIFTH_IP, {
+    type: "heartbeat",
+    symbol: "GOLD",
+    timeframe: "PERIOD_M5",
+    version: "1.23",
+    trading_enabled: true,
+  }), heartbeat);
+  assert.equal(heartbeat.statusCode, 200);
+
+  const execution = createResponse();
+  await statusHandler(createRequest("POST", FIFTH_IP, {
+    type: "execution",
+    status: "BUY order placed successfully",
+  }), execution);
+  assert.equal(execution.statusCode, 200);
+
+  anthropicHandler = () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ content: [{ type: "text", text: "BUY 55 400 600" }] }),
+  });
+  const signal = createResponse();
+  await signalHandler(createRequest("POST", FIFTH_IP, {
+    market_data: "M5 market data for status test",
+  }), signal);
+  assert.equal(signal.statusCode, 200);
+
+  const status = createResponse();
+  await statusHandler(createRequest("GET", FIFTH_IP), status);
+  assert.equal(status.statusCode, 200);
+  assert.deepEqual(status.json(), {
+    configured: true,
+    bridge_address: "https://remzaitrading.vercel.app",
+    model: "claude-sonnet-5-5",
+    lot_size: 0.1,
+    request_count: 1,
+    last_request_at: status.json().last_request_at,
+    last_signal: "BUY 55 400 600",
+    last_execution_status: "BUY order placed successfully",
+    last_execution_at: status.json().last_execution_at,
+    last_error: "",
+    ea_connected: true,
+    ea_last_seen_at: status.json().ea_last_seen_at,
+    ea_symbol: "GOLD",
+    ea_timeframe: "PERIOD_M5",
+    ea_version: "1.23",
+    ea_trading_enabled: true,
+  });
+  assert.equal(status.body.includes(OTHER_API_KEY), false);
+
+  const otherNetwork = createResponse();
+  await statusHandler(createRequest("GET", SECOND_IP), otherNetwork);
+  assert.equal(otherNetwork.json().configured, false);
+  assert.equal(otherNetwork.json().request_count, 0);
+  assert.equal(otherNetwork.json().ea_connected, false);
+});
+
 test("signal requests without this network's saved settings are rejected", async () => {
   anthropicCalls = [];
   const response = createResponse();
@@ -256,6 +358,12 @@ test("upstream API errors never return the saved API key", async () => {
   }), response);
   assert.equal(response.statusCode, 502);
   assert.equal(response.body.includes(API_KEY), false);
+
+  const status = createResponse();
+  await statusHandler(createRequest("GET", FIRST_IP), status);
+  assert.equal(status.json().last_signal, "Prediction request failed");
+  assert.match(status.json().last_error, /Invalid API key/);
+  assert.equal(status.json().last_error.includes(API_KEY), false);
 });
 
 test("invalid Claude output becomes HOLD with the configured lot size", async () => {
@@ -294,10 +402,24 @@ test("invalid settings and foreign browser origins are rejected", async () => {
 
 test("removing settings frees the key for a new public IP", async () => {
   await configure(FIRST_IP);
+  const heartbeat = createResponse();
+  await statusHandler(createRequest("POST", FIRST_IP, {
+    type: "heartbeat",
+    symbol: "GOLD",
+    timeframe: "PERIOD_M5",
+    version: "1.23",
+    trading_enabled: true,
+  }), heartbeat);
+  assert.equal(heartbeat.statusCode, 200);
   const removed = createResponse();
   await configHandler(createRequest("DELETE", FIRST_IP), removed);
   assert.equal(removed.statusCode, 200);
   assert.equal(removed.json().deleted, true);
+
+  const clearedStatus = createResponse();
+  await statusHandler(createRequest("GET", FIRST_IP), clearedStatus);
+  assert.equal(clearedStatus.json().configured, false);
+  assert.equal(clearedStatus.json().ea_symbol, "");
 
   const claimed = await configure(SECOND_IP);
   assert.equal(claimed.statusCode, 200);

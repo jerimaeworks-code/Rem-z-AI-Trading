@@ -1,5 +1,5 @@
 #property strict
-#property version   "1.22"
+#property version   "1.23"
 #property description "Claude-directed M5 entries with broker-side structural SL/TP"
 
 #include <Trade/Trade.mqh>
@@ -23,6 +23,7 @@ input ulong  InpMagicNumber = 35023301;
 const string LOCAL_SIGNAL_URL = "http://127.0.0.1:8765/api/signal";
 const string HOSTED_SIGNAL_URL = "https://remzaitrading.vercel.app/api/signal";
 const string HOSTED_CONFIG_URL = "https://remzaitrading.vercel.app/api/config";
+const string HOSTED_STATUS_URL = "https://remzaitrading.vercel.app/api/status";
 const int MAX_OPEN_POSITIONS_PER_ACCOUNT = 1;
 const int HOSTED_CONFIG_REFRESH_SECONDS = 300;
 CTrade trade;
@@ -342,7 +343,7 @@ bool ReportBridgeHeartbeat()
 {
    string body = "{\"symbol\":\"" + EscapeJson(_Symbol) +
                  "\",\"timeframe\":\"" + EnumToString(_Period) +
-                 "\",\"ea_version\":\"1.22" +
+                 "\",\"ea_version\":\"1.23" +
                  "\",\"trading_enabled\":" + (InpEnableTrading ? "true" : "false") + "}";
    char request[];
    int requestLength = StringToCharArray(body, request, 0, WHOLE_ARRAY, CP_UTF8);
@@ -427,7 +428,47 @@ bool RefreshHostedConfig()
    }
    configuredLotSize = lotSize;
    configuredModel = modelName;
+   ReportHostedHeartbeat();
    return true;
+}
+
+bool PostHostedStatus(const string body, const string updateType)
+{
+   char request[];
+   int requestLength = StringToCharArray(body, request, 0, WHOLE_ARRAY, CP_UTF8);
+   if(requestLength <= 1)
+   {
+      Print("Could not encode the hosted bridge " + updateType + " status.");
+      return false;
+   }
+   ArrayResize(request, requestLength - 1);
+
+   char response[];
+   string responseHeaders;
+   ResetLastError();
+   int status = WebRequest("POST", HOSTED_STATUS_URL,
+                           "Content-Type: application/json\r\n",
+                           3000, request, response, responseHeaders);
+   if(status != 200)
+   {
+      if(status == -1)
+         PrintFormat("Hosted bridge %s status failed (error %d). Check MT5 WebRequest settings and your internet connection.",
+                     updateType, GetLastError());
+      else
+         PrintFormat("Hosted bridge %s status returned HTTP %d.",
+                     updateType, status);
+      return false;
+   }
+   return true;
+}
+
+void ReportHostedHeartbeat()
+{
+   string body = "{\"type\":\"heartbeat\",\"symbol\":\"" + EscapeJson(_Symbol) +
+                 "\",\"timeframe\":\"" + EscapeJson(EnumToString(_Period)) +
+                 "\",\"version\":\"1.23\",\"trading_enabled\":" +
+                 (InpEnableTrading ? "true" : "false") + "}";
+   PostHostedStatus(body, "heartbeat");
 }
 
 void ReportExecutionStatus(const string statusText)
@@ -435,6 +476,9 @@ void ReportExecutionStatus(const string statusText)
    if(InpUseHostedService)
    {
       Print(statusText);
+      string body = "{\"type\":\"execution\",\"status\":\"" +
+                    EscapeJson(statusText) + "\"}";
+      PostHostedStatus(body, "execution");
       return;
    }
    string body = "{\"status\":\"" + EscapeJson(statusText) + "\"}";

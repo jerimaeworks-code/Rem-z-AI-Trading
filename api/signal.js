@@ -10,6 +10,7 @@ const {
   fingerprints,
   loadConfigForIp,
   checkRateLimit,
+  recordSignalStatus,
 } = require("../hosted_config.js");
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -29,6 +30,14 @@ function requestPayload(request) {
   if (typeof request.body === "string")
     return JSON.parse(request.body);
   return request.body;
+}
+
+async function saveSignalStatus(ipHash, signal, error) {
+  try {
+    await recordSignalStatus(ipHash, signal, error);
+  } catch (statusError) {
+    console.error(`Hosted bridge signal status could not be saved: ${statusError.message}`);
+  }
 }
 
 module.exports = async function handler(request, response) {
@@ -117,12 +126,18 @@ module.exports = async function handler(request, response) {
   }
   try {
     const result = await runSignalAnalysis(payload.market_data, config.apiKey, config.model);
+    await saveSignalStatus(ipHash, result.signal, "");
     sendJson(response, 200, {
       signal: result.signal,
       lot_size: config.lotSize,
     });
   } catch (error) {
     if (error instanceof InvalidSignalError) {
+      await saveSignalStatus(
+        ipHash,
+        "HOLD 0 0 0 (Claude response could not be verified)",
+        error.message,
+      );
       sendJson(response, 200, {
         signal: "HOLD 0 0 0",
         lot_size: config.lotSize,
@@ -133,6 +148,7 @@ module.exports = async function handler(request, response) {
     const message = (error instanceof Error ? error.message : "Claude request failed")
       .replaceAll(config.apiKey, "[redacted]")
       .slice(0, 240);
+    await saveSignalStatus(ipHash, "Prediction request failed", message);
     sendJson(response, 502, { error: message || "Claude request failed" });
   }
 };

@@ -110,6 +110,10 @@ function keyForConfig(apiKeyHash) {
   return `${KEY_PREFIX}:config:${apiKeyHash}`;
 }
 
+function keyForStatus(ipHash) {
+  return `${KEY_PREFIX}:status:${ipHash}`;
+}
+
 async function loadConfigForIp(ipHash) {
   const apiKeyHash = await redisCommand("GET", keyForIp(ipHash));
   if (typeof apiKeyHash !== "string" || !/^[a-f0-9]{64}$/.test(apiKeyHash))
@@ -156,18 +160,50 @@ return 1`;
 
 const DELETE_SCRIPT = `-- remz_delete_v1
 local api_key_hash = redis.call('GET', KEYS[1])
-if not api_key_hash then return 0 end
+if not api_key_hash then
+  redis.call('DEL', KEYS[2])
+  return 0
+end
 local owner_ip = redis.call('GET', ARGV[1] .. api_key_hash)
 if owner_ip ~= ARGV[3] then return -1 end
 redis.call('DEL', ARGV[1] .. api_key_hash)
 redis.call('DEL', ARGV[2] .. api_key_hash)
 redis.call('DEL', KEYS[1])
+redis.call('DEL', KEYS[2])
 return 1`;
 
 const RATE_LIMIT_SCRIPT = `-- remz_limit_v1
 local count = redis.call('INCR', KEYS[1])
 if count == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
 return count`;
+
+const RECORD_SIGNAL_SCRIPT = `-- remz_status_signal_v1
+redis.call('HINCRBY', KEYS[1], 'request_count', 1)
+redis.call('HSET', KEYS[1],
+  'last_request_at', ARGV[1],
+  'last_signal', ARGV[2],
+  'last_error', ARGV[3])
+redis.call('EXPIRE', KEYS[1], ARGV[4])
+return 1`;
+
+const RECORD_HEARTBEAT_SCRIPT = `-- remz_status_heartbeat_v1
+redis.call('HSET', KEYS[1],
+  'ea_last_seen_at', ARGV[1],
+  'ea_symbol', ARGV[2],
+  'ea_timeframe', ARGV[3],
+  'ea_version', ARGV[4],
+  'ea_trading_enabled', ARGV[5])
+redis.call('EXPIRE', KEYS[1], ARGV[6])
+return 1`;
+
+const RECORD_EXECUTION_SCRIPT = `-- remz_status_execution_v1
+redis.call('HSET', KEYS[1],
+  'last_execution_status', ARGV[1],
+  'last_execution_at', ARGV[2])
+redis.call('EXPIRE', KEYS[1], ARGV[3])
+return 1`;
+
+const STATUS_TTL_SECONDS = CONFIG_TTL_SECONDS;
 
 async function saveConfig(ipHash, apiKey, lotSize, model) {
   const apiKeyHash = apiKeyFingerprint(apiKey);
@@ -203,8 +239,9 @@ async function deleteConfig(ipHash) {
   const result = await redisCommand(
     "EVAL",
     DELETE_SCRIPT,
-    "1",
+    "2",
     keyForIp(ipHash),
+    keyForStatus(ipHash),
     `${KEY_PREFIX}:claim:`,
     `${KEY_PREFIX}:config:`,
     ipHash,
@@ -212,6 +249,76 @@ async function deleteConfig(ipHash) {
   if (result === -1)
     throw new Error("Hosted API-key ownership record is inconsistent");
   return result === 1;
+}
+
+async function getBridgeStatus(ipHash) {
+  const values = await redisCommand("HGETALL", keyForStatus(ipHash));
+  const status = {};
+  if (Array.isArray(values)) {
+    for (let index = 0; index + 1 < values.length; index += 2)
+      status[values[index]] = values[index + 1];
+  } else if (values && typeof values === "object") {
+    Object.assign(status, values);
+  } else if (values !== null) {
+    throw new Error("Hosted bridge status data is invalid");
+  }
+  const requestCount = Number(status.request_count || 0);
+  if (!Number.isSafeInteger(requestCount) || requestCount < 0)
+    throw new Error("Hosted bridge request count is invalid");
+  return {
+    requestCount,
+    lastRequestAt: status.last_request_at || null,
+    lastSignal: status.last_signal || "No signal requests yet",
+    lastError: status.last_error || "",
+    lastExecutionStatus: status.last_execution_status ||
+      "No execution result reported yet",
+    lastExecutionAt: status.last_execution_at || null,
+    eaLastSeenAt: status.ea_last_seen_at || null,
+    eaSymbol: status.ea_symbol || "",
+    eaTimeframe: status.ea_timeframe || "",
+    eaVersion: status.ea_version || "",
+    eaTradingEnabled: status.ea_trading_enabled === "true",
+  };
+}
+
+async function recordSignalStatus(ipHash, signal, error) {
+  return redisCommand(
+    "EVAL",
+    RECORD_SIGNAL_SCRIPT,
+    "1",
+    keyForStatus(ipHash),
+    new Date().toISOString(),
+    signal.slice(0, 300),
+    error.slice(0, 300),
+    String(STATUS_TTL_SECONDS),
+  );
+}
+
+async function recordHeartbeatStatus(ipHash, heartbeat) {
+  return redisCommand(
+    "EVAL",
+    RECORD_HEARTBEAT_SCRIPT,
+    "1",
+    keyForStatus(ipHash),
+    new Date().toISOString(),
+    heartbeat.symbol,
+    heartbeat.timeframe,
+    heartbeat.version,
+    String(heartbeat.tradingEnabled),
+    String(STATUS_TTL_SECONDS),
+  );
+}
+
+async function recordExecutionStatus(ipHash, status) {
+  return redisCommand(
+    "EVAL",
+    RECORD_EXECUTION_SCRIPT,
+    "1",
+    keyForStatus(ipHash),
+    status.slice(0, 300),
+    new Date().toISOString(),
+    String(STATUS_TTL_SECONDS),
+  );
 }
 
 async function checkStoreReady() {
@@ -235,6 +342,10 @@ module.exports = {
   loadConfigForIp,
   saveConfig,
   deleteConfig,
+  getBridgeStatus,
+  recordSignalStatus,
+  recordHeartbeatStatus,
+  recordExecutionStatus,
   checkStoreReady,
   checkRateLimit,
 };

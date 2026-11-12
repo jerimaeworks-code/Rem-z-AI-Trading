@@ -56,6 +56,13 @@
     .error { color: #ffabb4; }
     code { overflow-wrap: anywhere; padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; background: rgba(0,0,0,.24); color: #d7ddff; }
     .actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 26px 0 42px; }
+    .live-status { margin: 0 0 26px; padding: 24px; }
+    .status-title { display: flex; align-items: center; gap: 10px; margin-bottom: 17px; }
+    .status-title h2 { margin: 0; }
+    .live-status dl { display: grid; grid-template-columns: minmax(155px, 190px) 1fr; gap: 13px 16px; margin: 0; }
+    .live-status dt { color: #8fa1bd; }
+    .live-status dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+    .status-error { color: #ffabb4; }
     .button { display: inline-flex; min-height: 46px; align-items: center; justify-content: center; padding: 0 18px; border-radius: 11px; background: linear-gradient(110deg, #9af0d0, #9ce8f1); color: #081915; font-weight: 800; text-decoration: none; }
     .button.secondary { border: 1px solid var(--line); background: rgba(255,255,255,.04); color: #eef2ff; }
     .warning { margin-top: 17px; padding: 18px 20px; color: var(--muted); font-size: 14px; line-height: 1.7; }
@@ -67,6 +74,9 @@
       main { padding-top: 48px; }
       .grid { grid-template-columns: 1fr; }
       .form-grid { grid-template-columns: 1fr; }
+      .live-status { padding: 18px; }
+      .live-status dl { grid-template-columns: 1fr; gap: 5px; }
+      .live-status dd { margin-bottom: 9px; }
     }
   </style>
 </head>
@@ -85,6 +95,31 @@
         <a class="button" href="/downloads/Remz-AI-Trading-Powered-by-Claude.zip">Download MT5 EA</a>
         <a class="button secondary" href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">Get an Anthropic API key</a>
       </div>
+      <section class="live-status" aria-labelledby="live-status-title">
+        <div class="num">LIVE SYSTEM STATUS</div>
+        <div class="status-title">
+          <span class="dot" id="ea-status-dot"></span>
+          <h2 id="live-status-title">Bridge status</h2>
+          <span id="ea-status-text" role="status" aria-live="polite">Checking MT5 connection…</span>
+        </div>
+        <dl>
+          <dt>Hosted address</dt><dd id="bridge-address">https://remzaitrading.vercel.app</dd>
+          <dt>API key</dt><dd id="bridge-key-status">Checking…</dd>
+          <dt>Model</dt><dd id="bridge-model">—</dd>
+          <dt>Lot size</dt><dd id="bridge-lot-size">—</dd>
+          <dt>Claude signal requests</dt><dd id="bridge-request-count">0</dd>
+          <dt>Last request</dt><dd id="bridge-last-request">—</dd>
+          <dt>Latest signal</dt><dd id="bridge-last-signal">No signal requests yet</dd>
+          <dt>Last execution result</dt><dd id="bridge-execution">No execution result reported yet</dd>
+          <dt>Execution updated</dt><dd id="bridge-execution-time">—</dd>
+          <dt>Latest API error</dt><dd id="bridge-error">None</dd>
+          <dt>MT5 EA connection</dt><dd id="bridge-ea-connection">Not connected</dd>
+          <dt>EA last seen</dt><dd id="bridge-ea-seen">—</dd>
+          <dt>EA chart</dt><dd id="bridge-ea-chart">—</dd>
+          <dt>EA build</dt><dd id="bridge-ea-build">—</dd>
+          <dt>Order setting</dt><dd id="bridge-order-setting">—</dd>
+        </dl>
+      </section>
       <form class="settings" id="settings-form" autocomplete="off">
         <div class="num">YOUR BRIDGE SETTINGS</div>
         <h2>Connect your Claude API key</h2>
@@ -141,6 +176,8 @@
       const form = document.getElementById("settings-form");
       const saveButton = document.getElementById("save-settings");
       const removeButton = document.getElementById("remove-settings");
+      const eaStatusText = document.getElementById("ea-status-text");
+      const eaStatusDot = document.getElementById("ea-status-dot");
 
       async function requestJson(url, options) {
         const response = await fetch(url, { cache: "no-store", ...options });
@@ -178,6 +215,62 @@
         }
       }
 
+      function formatTimestamp(value) {
+        if (!value) return "—";
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+      }
+
+      async function refreshBridgeStatus() {
+        try {
+          const status = await requestJson("/api/status");
+          document.getElementById("bridge-key-status").textContent =
+            status.configured ? "Configured (key hidden)" : "Not configured";
+          document.getElementById("bridge-model").textContent = status.model || "—";
+          document.getElementById("bridge-lot-size").textContent =
+            status.lot_size === null ? "—" : `${Number(status.lot_size).toFixed(2)} lots`;
+          document.getElementById("bridge-request-count").textContent =
+            String(status.request_count);
+          document.getElementById("bridge-last-request").textContent =
+            formatTimestamp(status.last_request_at);
+          document.getElementById("bridge-last-signal").textContent =
+            status.last_signal || "No signal requests yet";
+          document.getElementById("bridge-execution").textContent =
+            status.last_execution_status || "No execution result reported yet";
+          document.getElementById("bridge-execution-time").textContent =
+            formatTimestamp(status.last_execution_at);
+          const errorElement = document.getElementById("bridge-error");
+          errorElement.textContent = status.last_error || "None";
+          errorElement.classList.toggle("status-error", Boolean(status.last_error));
+          document.getElementById("bridge-ea-connection").textContent =
+            status.ea_connected ? "Connected" : "Not connected";
+          document.getElementById("bridge-ea-seen").textContent =
+            formatTimestamp(status.ea_last_seen_at);
+          document.getElementById("bridge-ea-chart").textContent =
+            status.ea_symbol && status.ea_timeframe
+              ? `${status.ea_symbol} ${status.ea_timeframe}`
+              : "—";
+          document.getElementById("bridge-ea-build").textContent =
+            status.ea_version || "—";
+          document.getElementById("bridge-order-setting").textContent =
+            status.configured
+              ? status.ea_trading_enabled
+                ? "Enabled in EA (demo and live permitted)"
+                : "Disabled in EA"
+              : "No bridge settings";
+          const connected = status.ea_connected;
+          eaStatusText.textContent = connected
+            ? "MT5 connected"
+            : status.configured ? "Waiting for MT5 EA" : "Bridge not configured";
+          eaStatusDot.classList.toggle("ready", connected);
+        } catch {
+          eaStatusText.textContent = "Status unavailable";
+          eaStatusDot.classList.remove("ready");
+          document.getElementById("bridge-ea-connection").textContent =
+            "Status unavailable";
+        }
+      }
+
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
         saveButton.disabled = true;
@@ -198,6 +291,7 @@
           settingsMessage.textContent = "Settings saved for this public IP. The API key will not be displayed again.";
           settingsMessage.className = "form-message saved";
           document.getElementById("lot-size").value = Number(result.lot_size).toFixed(2);
+          refreshBridgeStatus();
         } catch (error) {
           settingsMessage.textContent = error.message;
           settingsMessage.className = "form-message error";
@@ -218,6 +312,7 @@
           document.getElementById("api-key").required = true;
           settingsMessage.textContent = "Settings removed for this public IP.";
           settingsMessage.className = "form-message saved";
+          refreshBridgeStatus();
         } catch (error) {
           settingsMessage.textContent = error.message;
           settingsMessage.className = "form-message error";
@@ -227,6 +322,8 @@
       });
 
       refreshStatus();
+      refreshBridgeStatus();
+      window.setInterval(refreshBridgeStatus, 15000);
     })();
   </script>
 </body>

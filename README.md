@@ -8,7 +8,10 @@ in this repository. Trades execute locally in each user's own MT5 terminal.
 Import this GitHub repository into Vercel and set the project **Root Directory**
 to the repository root (`.`). The root [`vercel.json`](vercel.json) routes the
 homepage, dashboard, animation script, and EA downloads from `website/`.
-`api/health.js`, `api/config.js`, and `api/signal.js` provide the hosted API.
+`api/health.js`, `api/config.js`, `api/status.js`, and `api/signal.js` provide
+the hosted API. The dashboard status panel shows signal requests, recent
+signals and errors, execution results, and the most recent MT5 EA heartbeat
+for the current public IP; no broker account or position details are collected.
 No build command is required. `api/config.js` stores the encrypted per-public-IP
 API key, lot size, and model
 in Upstash Redis. The signal function is configured for a 60-second maximum
@@ -47,13 +50,15 @@ Each API key can be claimed by only one public IP. A Wi-Fi's public IP is the
 internet-facing address, not the router's private LAN address. Devices on the
 same Wi-Fi normally share the same public IP, configuration, and signal-rate
 limit; IP binding cannot distinguish them. The dashboard stores keys encrypted
-in Upstash Redis for up to 90 days since the last settings save.
-Market requests and per-user trading status are not persisted. Anthropic
-processes each request and charges the key owner directly. Devices on the same
-Wi-Fi can use the saved bridge and may incur API charges. Dynamic IP changes,
-VPNs, and changing Wi-Fi can prevent access; create a different Anthropic key
-for a different public IP. Users may select `InpUseHostedService = false` to
-use the optional local bridge instead.
+in Upstash Redis for up to 90 days since the last settings save. Market data is
+not persisted. A per-public-IP status summary (signal count, latest
+signal/error, EA heartbeat, and execution result) is stored until 90 days after
+its latest update; it contains no broker account number or position details.
+Anthropic processes each request and charges the key owner directly. Devices
+on the same Wi-Fi can use the saved bridge and may incur API charges. Dynamic
+IP changes, VPNs, and changing Wi-Fi can prevent access; create a different
+Anthropic key for a different public IP. Users may select
+`InpUseHostedService = false` to use the optional local bridge instead.
 
 ## Project contents
 

@@ -28,15 +28,20 @@ HOSTED SERVICE INSTALLATION
    The EA retrieves the saved lot size and model from the hosted bridge.
 6. Sign in to your broker account only in your own MT5 terminal. Enable Algo
    Trading only after reviewing all EA inputs.
-7. Check the MT5 Experts and Journal tabs for service or broker errors.
+7. The dashboard's Live System Status shows recent signals, execution results,
+   API errors, and whether the MT5 EA has checked in. Keep MT5 running and
+   connected to the same public IP for live status. Check the MT5 Experts and
+   Journal tabs for service or broker errors.
 
 PRIVACY AND SECURITY
 - No website account is required. API keys are encrypted in Upstash Redis and
-  expire after 90 days without a settings save. Market requests and per-user
-  trading status are not persisted.
+  expire after 90 days without a settings save. Market data is not persisted.
+  A per-public-IP status summary is stored until 90 days after its latest
+  update; it does not include broker account numbers or position details.
 - Anthropic processes the analysis and bills the API-key owner.
-- The hosted service returns signals only. The EA checks positions and places
-  orders inside your own MT5 terminal.
+- The hosted service returns signals and stores status updates for the same
+  public IP. It does not collect broker account numbers or positions. The EA
+  checks positions and places orders inside your own MT5 terminal.
 - Devices on the same Wi-Fi usually share one public IP and one settings slot.
 - Anyone on that Wi-Fi can use the configured bridge and may incur Anthropic
   charges; IP binding cannot distinguish people on the same network.
