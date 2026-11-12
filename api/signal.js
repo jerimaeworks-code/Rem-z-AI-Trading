@@ -5,9 +5,14 @@ const {
   InvalidSignalError,
   MAX_MARKET_DATA_CHARS,
 } = require("../localhost_bridge.js");
+const {
+  clientIp,
+  fingerprints,
+  loadConfigForIp,
+  checkRateLimit,
+} = require("../hosted_config.js");
 
 const MAX_BODY_BYTES = 64 * 1024;
-const MAX_API_KEY_CHARS = 512;
 const ALLOWED_ORIGIN = "https://remzaitrading.vercel.app";
 
 function sendJson(response, statusCode, payload) {
@@ -40,7 +45,7 @@ module.exports = async function handler(request, response) {
     if (origin === ALLOWED_ORIGIN) {
       response.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
       response.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-      response.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Anthropic-Api-Key");
+      response.setHeader("Access-Control-Allow-Headers", "Content-Type");
     }
     response.statusCode = 204;
     response.end();
@@ -61,14 +66,6 @@ module.exports = async function handler(request, response) {
   const declaredLength = Number(request.headers["content-length"] || 0);
   if (declaredLength > MAX_BODY_BYTES) {
     sendJson(response, 413, { error: "Request body is too large" });
-    return;
-  }
-
-  const apiKey = request.headers["x-anthropic-api-key"];
-  if (typeof apiKey !== "string" ||
-      apiKey.trim().length < 10 ||
-      apiKey.trim().length > MAX_API_KEY_CHARS) {
-    sendJson(response, 401, { error: "Enter your Anthropic API key in the EA inputs" });
     return;
   }
 
@@ -95,25 +92,46 @@ module.exports = async function handler(request, response) {
     });
     return;
   }
-  const model = payload.model === undefined ? "claude-sonnet-5-5" : payload.model;
-  if (typeof model !== "string" || !/^[A-Za-z0-9._-]{1,100}$/.test(model)) {
-    sendJson(response, 400, { error: "Model name contains invalid characters" });
+
+  let config;
+  let ipHash;
+  try {
+    const ip = clientIp(request);
+    ipHash = fingerprints(ip, "").ipHash;
+    if (!(await checkRateLimit(ipHash))) {
+      response.setHeader("Retry-After", "60");
+      sendJson(response, 429, { error: "This network has reached the signal request limit. Try again in one minute." });
+      return;
+    }
+    config = await loadConfigForIp(ipHash);
+  } catch (error) {
+    console.error(`Hosted bridge configuration lookup failed: ${error.message}`);
+    sendJson(response, 503, { error: "Hosted bridge settings are temporarily unavailable" });
     return;
   }
-
+  if (!config) {
+    sendJson(response, 401, {
+      error: "No API key is configured for this public IP. Open /dashboard on this network and save your bridge settings.",
+    });
+    return;
+  }
   try {
-    const result = await runSignalAnalysis(payload.market_data, apiKey.trim(), model);
-    sendJson(response, 200, { signal: result.signal });
+    const result = await runSignalAnalysis(payload.market_data, config.apiKey, config.model);
+    sendJson(response, 200, {
+      signal: result.signal,
+      lot_size: config.lotSize,
+    });
   } catch (error) {
     if (error instanceof InvalidSignalError) {
       sendJson(response, 200, {
         signal: "HOLD 0 0 0",
+        lot_size: config.lotSize,
         reason: "Claude response could not be verified",
       });
       return;
     }
     const message = (error instanceof Error ? error.message : "Claude request failed")
-      .replaceAll(apiKey.trim(), "[redacted]")
+      .replaceAll(config.apiKey, "[redacted]")
       .slice(0, 240);
     sendJson(response, 502, { error: message || "Claude request failed" });
   }

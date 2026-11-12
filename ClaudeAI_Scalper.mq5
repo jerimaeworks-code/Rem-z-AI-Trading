@@ -1,13 +1,11 @@
 #property strict
-#property version   "1.21"
+#property version   "1.22"
 #property description "Claude-directed M5 entries with broker-side structural SL/TP"
 
 #include <Trade/Trade.mqh>
 
 input bool   InpUseHostedService = true;
-input string InpAnthropicApiKey = "";
 input string InpClaudeModel = "claude-sonnet-5-5";
-input double InpLotSize = 0.01;
 input bool   InpEnableTrading = true;
 input bool   InpEnforcePerTradeRiskCap = false;
 input bool   InpEnforceDailyDrawdown = false;
@@ -24,7 +22,9 @@ input ulong  InpMagicNumber = 35023301;
 
 const string LOCAL_SIGNAL_URL = "http://127.0.0.1:8765/api/signal";
 const string HOSTED_SIGNAL_URL = "https://remzaitrading.vercel.app/api/signal";
+const string HOSTED_CONFIG_URL = "https://remzaitrading.vercel.app/api/config";
 const int MAX_OPEN_POSITIONS_PER_ACCOUNT = 1;
+const int HOSTED_CONFIG_REFRESH_SECONDS = 300;
 CTrade trade;
 int emaFastHandle = INVALID_HANDLE;
 int emaSlowHandle = INVALID_HANDLE;
@@ -42,17 +42,15 @@ datetime lastHeartbeatAttemptTime = 0;
 double dayStartEquity = 0.0;
 string dayBaselineKey = "";
 double configuredLotSize = 0.01;
+string configuredModel = "claude-sonnet-5-5";
 
 int OnInit()
 {
-   if(InpLotSize < 0.01 || InpLotSize > 100.0)
-   {
-      Print("Lot size must be between 0.01 and 100.00 lots.");
-      return INIT_PARAMETERS_INCORRECT;
-   }
-   string modelName = InpClaudeModel;
+   configuredModel = InpClaudeModel;
+   string modelName = configuredModel;
    StringTrimLeft(modelName);
    StringTrimRight(modelName);
+   configuredModel = modelName;
    if(modelName == "" || StringLen(modelName) > 100)
    {
       Print("Claude model must contain 1-100 valid ASCII letters, numbers, periods, underscores or hyphens.");
@@ -70,17 +68,6 @@ int OnInit()
          return INIT_PARAMETERS_INCORRECT;
       }
    }
-   string anthropicKey = InpAnthropicApiKey;
-   StringTrimLeft(anthropicKey);
-   StringTrimRight(anthropicKey);
-   if(StringLen(anthropicKey) > 512 ||
-      StringFind(anthropicKey, "\r") >= 0 ||
-      StringFind(anthropicKey, "\n") >= 0)
-   {
-      Print("Anthropic API key is invalid; use a key up to 512 characters with no line breaks.");
-      return INIT_PARAMETERS_INCORRECT;
-   }
-   configuredLotSize = InpLotSize;
    if(_Period != PERIOD_M5)
    {
       Print("Attach this EA to an M5 chart.");
@@ -126,10 +113,10 @@ int OnInit()
    lastBarTime = iTime(_Symbol, PERIOD_M5, 0);
    lastAnalyzedBarTime = lastBarTime;
    RefreshDailyBaseline();
-   PrintFormat("Claude AI Scalper v1.21 initialized on M5. Claude predicts once per new M5 candle only when the account has no open positions; maximum spread is %d points and the account-wide open-position limit is one. Positions use broker-side structural SL and TP from Claude's signal; no fixed account-currency close is applied.",
+   PrintFormat("Claude AI Scalper v1.22 initialized on M5. Claude predicts once per new M5 candle only when the account has no open positions; maximum spread is %d points and the account-wide open-position limit is one. Positions use broker-side structural SL and TP from Claude's signal; no fixed account-currency close is applied.",
                InpMaxSpreadPoints);
    if(InpUseHostedService)
-      Print("Hosted HTTPS signal service enabled. Add https://remzaitrading.vercel.app to MT5 WebRequest settings; enter your own Anthropic API key in EA inputs.");
+      Print("Hosted HTTPS bridge enabled. Add https://remzaitrading.vercel.app to MT5 WebRequest settings, save the API key and lot size on the hosted dashboard, and keep the same internet connection.");
    else
       Print("Local bridge enabled. Add http://127.0.0.1:8765 to MT5 WebRequest settings and keep the local bridge running.");
    Print(InpEnforcePerTradeRiskCap
@@ -233,10 +220,14 @@ void ProcessEA()
       return;
    }
    datetime now = TimeCurrent();
-   if(now - lastHeartbeatAttemptTime >= 30)
+   int configRefreshSeconds = InpUseHostedService
+                              ? HOSTED_CONFIG_REFRESH_SECONDS : 30;
+   if(now - lastHeartbeatAttemptTime >= configRefreshSeconds)
    {
       lastHeartbeatAttemptTime = now;
-      if(!InpUseHostedService && !ReportBridgeHeartbeat())
+      bool configReady = InpUseHostedService
+                         ? RefreshHostedConfig() : ReportBridgeHeartbeat();
+      if(!configReady)
          return;
    }
    if(lastAnalyzedBarTime == barTime)
@@ -290,7 +281,6 @@ void ProcessEA()
       ReportExecutionStatus("Claude signal request failed: " + requestFailureReason);
       return;
    }
-
    string action;
    int confidence = 0;
    int claudeStopLossPoints = 0;
@@ -352,7 +342,7 @@ bool ReportBridgeHeartbeat()
 {
    string body = "{\"symbol\":\"" + EscapeJson(_Symbol) +
                  "\",\"timeframe\":\"" + EnumToString(_Period) +
-                 "\",\"ea_version\":\"1.21" +
+                 "\",\"ea_version\":\"1.22" +
                  "\",\"trading_enabled\":" + (InpEnableTrading ? "true" : "false") + "}";
    char request[];
    int requestLength = StringToCharArray(body, request, 0, WHOLE_ARRAY, CP_UTF8);
@@ -385,6 +375,58 @@ bool ReportBridgeHeartbeat()
       Print("Local bridge returned an invalid lot size; no signal will be processed.");
       return false;
    }
+   return true;
+}
+
+bool RefreshHostedConfig()
+{
+   char request[];
+   char response[];
+   string responseHeaders;
+   ResetLastError();
+   int status = WebRequest("GET", HOSTED_CONFIG_URL,
+                           "", 5000, request, response, responseHeaders);
+   if(status == -1)
+   {
+      PrintFormat("Hosted bridge settings request failed (error %d). Check MT5 WebRequest settings and your internet connection.",
+                  GetLastError());
+      return false;
+   }
+   string responseText = CharArrayToString(response, 0, -1, CP_UTF8);
+   if(status != 200)
+   {
+      string serviceError;
+      if(ExtractJsonString(responseText, "\"error\"", serviceError))
+         PrintFormat("Hosted bridge settings returned HTTP %d: %s",
+                     status, StringSubstr(serviceError, 0, 180));
+      else
+         PrintFormat("Hosted bridge settings returned HTTP %d.", status);
+      return false;
+   }
+   double lotSize = 0.0;
+   string modelName;
+   if(!ExtractJsonNumber(responseText, "\"lot_size\"", lotSize) ||
+      lotSize < 0.01 || lotSize > 100.0 ||
+      !ExtractJsonString(responseText, "\"model\"", modelName) ||
+      modelName == "" || StringLen(modelName) > 100)
+   {
+      Print("Hosted bridge returned invalid settings; no signal will be requested.");
+      return false;
+   }
+   for(int modelIndex = 0; modelIndex < StringLen(modelName); modelIndex++)
+   {
+      ushort character = StringGetCharacter(modelName, modelIndex);
+      if(!((character >= 48 && character <= 57) ||
+           (character >= 65 && character <= 90) ||
+           (character >= 97 && character <= 122) ||
+           character == 46 || character == 95 || character == 45))
+      {
+         Print("Hosted bridge returned an invalid Claude model name.");
+         return false;
+      }
+   }
+   configuredLotSize = lotSize;
+   configuredModel = modelName;
    return true;
 }
 
@@ -1226,11 +1268,8 @@ bool BuildMarketPrompt(string &prompt)
 
 bool RequestSignal(const string prompt, string &signalText, string &failureReason)
 {
-   string modelName = InpClaudeModel;
-   StringTrimLeft(modelName);
-   StringTrimRight(modelName);
    string body = "{\"market_data\":\"" + EscapeJson(prompt) +
-                 "\",\"model\":\"" + EscapeJson(modelName) + "\"}";
+                 "\",\"model\":\"" + EscapeJson(configuredModel) + "\"}";
    char request[];
    int requestLength = StringToCharArray(body, request, 0, WHOLE_ARRAY, CP_UTF8);
    if(requestLength <= 1)
@@ -1245,16 +1284,6 @@ bool RequestSignal(const string prompt, string &signalText, string &failureReaso
    string url = LOCAL_SIGNAL_URL;
    if(InpUseHostedService)
    {
-      string anthropicKey = InpAnthropicApiKey;
-      StringTrimLeft(anthropicKey);
-      StringTrimRight(anthropicKey);
-      if(anthropicKey == "")
-      {
-         failureReason = "enter your Anthropic API key in the EA inputs.";
-         Print("Hosted Claude signal request blocked: " + failureReason);
-         return false;
-      }
-      headers += "x-anthropic-api-key: " + anthropicKey + "\r\n";
       url = HOSTED_SIGNAL_URL;
    }
    char response[];
@@ -1282,6 +1311,18 @@ bool RequestSignal(const string prompt, string &signalText, string &failureReaso
    }
 
    string responseText = CharArrayToString(response, 0, -1, CP_UTF8);
+   if(InpUseHostedService)
+   {
+      double signalLotSize = 0.0;
+      if(!ExtractJsonNumber(responseText, "\"lot_size\"", signalLotSize) ||
+         signalLotSize < 0.01 || signalLotSize > 100.0)
+      {
+         failureReason = "hosted bridge returned an invalid lot size.";
+         Print("Hosted signal response did not contain a valid lot size.");
+         return false;
+      }
+      configuredLotSize = signalLotSize;
+   }
    if(!ExtractJsonString(responseText, "\"signal\"", signalText))
    {
       failureReason = "bridge response did not contain a valid signal.";
