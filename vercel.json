@@ -1,0 +1,16 @@
+{
+  "rewrites": [
+    {
+      "source": "/",
+      "destination": "/website/index.html"
+    },
+    {
+      "source": "/animations.js",
+      "destination": "/website/animations.js"
+    },
+    {
+      "source": "/downloads/:path*",
+      "destination": "/website/downloads/:path*"
+    }
+  ]
+}
